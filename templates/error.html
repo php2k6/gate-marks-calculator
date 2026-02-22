@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} – {{ title }}{% endblock %}
+{% block content %}
+<div class="container narrow" style="text-align:center;padding:4rem 1rem">
+  <div style="font-size:4rem;margin-bottom:1rem">{{ icon }}</div>
+  <h1 style="color:var(--blue);font-size:1.8rem;margin-bottom:.5rem">{{ title }}</h1>
+  <p style="color:var(--muted);margin-bottom:2rem">{{ message }}</p>
+  <a href="{{ url_for('index') }}" class="btn-primary" style="margin-top:0">← Back to Calculator</a>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+flask
+itsdangerous
+beautifulsoup4
+pdfplumber
+reportlab

@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}GATE Result – {{ cname or cid }}{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Header -->
+  <div class="result-header">
+    <div class="result-meta">
+      <span class="badge badge-paper">{{ paper }}</span>
+      <span class="badge badge-shift">Shift {{ shift }}</span>
+      <span class="badge badge-date">{{ date }}</span>
+    </div>
+    <h1>{{ cname if cname else cid }}</h1>
+    <p class="candidate-id">Candidate ID: <strong>{{ cid }}</strong></p>
+  </div>
+
+  {% if warning %}
+  <div class="alert alert-warn" role="alert">
+    <span class="alert-icon">⚠</span>
+    <p>{{ warning }}</p>
+  </div>
+  {% endif %}
+
+  <!-- Score scorecards -->
+  <div class="scorecard-grid">
+    <div class="scorecard scorecard-main">
+      <div class="scorecard-value">{{ total }}</div>
+      <div class="scorecard-max">out of {{ max_marks }}</div>
+      <div class="scorecard-label">Total Score</div>
+    </div>
+    <div class="scorecard scorecard-pct">
+      <div class="scorecard-value">{{ pct }}%</div>
+      <div class="scorecard-label">Percentage</div>
+    </div>
+    <div class="scorecard scorecard-correct">
+      <div class="scorecard-value">{{ correct }}</div>
+      <div class="scorecard-label">Correct</div>
+    </div>
+    <div class="scorecard scorecard-wrong">
+      <div class="scorecard-value">{{ incorrect }}</div>
+      <div class="scorecard-label">Incorrect</div>
+    </div>
+    <div class="scorecard scorecard-na">
+      <div class="scorecard-value">{{ not_attempted }}</div>
+      <div class="scorecard-label">Not Attempted</div>
+    </div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="progress-wrap">
+    {% set p_correct   = (correct   / (correct + incorrect + not_attempted) * 100) | round(1) if (correct + incorrect + not_attempted) else 0 %}
+    {% set p_incorrect = (incorrect / (correct + incorrect + not_attempted) * 100) | round(1) if (correct + incorrect + not_attempted) else 0 %}
+    {% set p_na        = (not_attempted / (correct + incorrect + not_attempted) * 100) | round(1) if (correct + incorrect + not_attempted) else 0 %}
+    <div class="progress-bar">
+      <div class="seg seg-correct"   style="width:{{ p_correct }}%"   title="{{ correct }} correct ({{ p_correct }}%)"></div>
+      <div class="seg seg-incorrect" style="width:{{ p_incorrect }}%" title="{{ incorrect }} incorrect ({{ p_incorrect }}%)"></div>
+      <div class="seg seg-na"        style="width:{{ p_na }}%"        title="{{ not_attempted }} not attempted ({{ p_na }}%)"></div>
+    </div>
+    <div class="progress-legend">
+      <span class="leg leg-correct">  ■ Correct {{ p_correct }}%</span>
+      <span class="leg leg-incorrect">■ Incorrect {{ p_incorrect }}%</span>
+      <span class="leg leg-na">       ■ Not Attempted {{ p_na }}%</span>
+    </div>
+  </div>
+
+  <div class="two-col">
+
+    <!-- Question Type Breakdown -->
+    <div class="card">
+      <h2 class="card-title">By Question Type</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Type</th><th>Total</th><th>Correct</th><th>Incorrect</th><th>Skipped</th><th>Marks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for qt, st in type_stats.items() %}
+          <tr>
+            <td><span class="qtype-badge qtype-{{ qt|lower }}">{{ qt }}</span></td>
+            <td>{{ st.total }}</td>
+            <td class="green">{{ st.correct }}</td>
+            <td class="red">{{ st.incorrect }}</td>
+            <td class="gray">{{ st.not_attempted }}</td>
+            <td class="bold">{{ st.marks }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="total-row">
+            <td>Total</td>
+            <td>{{ correct + incorrect + not_attempted }}</td>
+            <td class="green">{{ correct }}</td>
+            <td class="red">{{ incorrect }}</td>
+            <td class="gray">{{ not_attempted }}</td>
+            <td class="bold">{{ total }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Section Breakdown -->
+    {% if sec_stats %}
+    <div class="card">
+      <h2 class="card-title">By Section</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Section</th><th>Total</th><th>Correct</th><th>Incorrect</th><th>Skipped</th><th>Marks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sec_stats %}
+          <tr>
+            <td>{{ s.section }}</td>
+            <td>{{ s.total }}</td>
+            <td class="green">{{ s.correct }}</td>
+            <td class="red">{{ s.incorrect }}</td>
+            <td class="gray">{{ s.not_attempted }}</td>
+            <td class="bold">{{ s.marks }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Download PDF -->
+  {% if has_pdf %}
+  <div class="download-bar">
+    <a href="{{ dl_url }}" class="btn-primary btn-download" id="dlBtn">
+      ⬇ Download PDF Report
+    </a>
+    <span class="muted">
+      ⏱ Link valid for <strong>10 minutes</strong> &nbsp;·&nbsp;
+      ⚠ <strong>One-time download</strong> — save the file immediately.
+    </span>
+  </div>
+  <script>
+    document.getElementById("dlBtn").addEventListener("click", function() {
+      setTimeout(() => {
+        this.textContent = "✔ Downloaded — link expired";
+        this.style.background = "#6c757d";
+        this.style.pointerEvents = "none";
+      }, 2000);
+    });
+  </script>
+  {% endif %}
+
+  <!-- Detailed Results Table -->
+  <div class="card mt">
+    <div class="card-title-row">
+      <h2 class="card-title">Question-by-Question Breakdown</h2>
+      <div class="filter-btns" id="filterBtns">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="correct">Correct</button>
+        <button class="filter-btn" data-filter="incorrect">Incorrect</button>
+        <button class="filter-btn" data-filter="not_attempted">Skipped</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table detail-table" id="detailTable">
+        <thead>
+          <tr>
+            <th>Q No</th><th>Type</th><th>Section</th>
+            <th>Correct Answer</th><th>Your Answer</th>
+            <th>Status</th><th>Marks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr data-status="{{ r.status }}">
+            <td>{{ r.q_no }}</td>
+            <td><span class="qtype-badge qtype-{{ r.q_type|lower }}">{{ r.q_type }}</span></td>
+            <td>{{ r.section }}</td>
+            <td class="answer-cell">{{ r.correct_answer }}</td>
+            <td class="answer-cell {% if not r.given_answer %}gray{% endif %}">
+              {{ r.given_answer if r.given_answer else "—" }}
+            </td>
+            <td>
+              {% if r.status == "correct" %}
+                <span class="status-chip status-correct">✔ Correct</span>
+              {% elif r.status == "incorrect" %}
+                <span class="status-chip status-incorrect">✘ Wrong</span>
+              {% else %}
+                <span class="status-chip status-na">— Skipped</span>
+              {% endif %}
+            </td>
+            <td class="{% if r.marks_awarded > 0 %}green{% elif r.marks_awarded < 0 %}red{% else %}gray{% endif %} bold">
+              {% if r.marks_awarded > 0 %}+{% endif %}{{ r.marks_awarded }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- New Calculation -->
+  <div class="bottom-actions">
+    <a href="{{ url_for('index') }}" class="btn-outline">← Calculate Another</a>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const f = btn.dataset.filter;
+    document.querySelectorAll("#detailTable tbody tr").forEach(row => {
+      row.style.display = (f === "all" || row.dataset.status === f) ? "" : "none";
+    });
+  });
+});
+</script>
+{% endblock %}

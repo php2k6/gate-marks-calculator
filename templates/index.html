@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}GATE Result Calculator – Check Your Score{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+  <h1>Check Your GATE Score</h1>
+  <p>Paste your official GATE response sheet URL below, select your paper details,<br>and get an instant detailed result with PDF report.</p>
+</div>
+
+<div class="container narrow">
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">
+    <span class="alert-icon">✕</span>
+    <div>
+      <strong>Error</strong>
+      <p>{{ error }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if keys %}
+  <div class="card form-card">
+    <h2 class="card-title">Enter Details</h2>
+
+    <form action="{{ url_for('calculate') }}" method="POST" id="calcForm" novalidate>
+
+      <!-- URL input -->
+      <div class="form-group">
+        <label for="url">Response Sheet URL <span class="required">*</span></label>
+        <p class="field-hint">Copy the link from the GATE portal → "View Responses" page.</p>
+        <input type="url" id="url" name="url" required
+               placeholder="https://cdn.digialm.com/…/YourID_GATE….html"
+               class="form-input"/>
+      </div>
+
+      <!-- Cascading selects -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="paper">Paper <span class="required">*</span></label>
+          <select id="paper" name="paper" class="form-input" required>
+            <option value="">— Select paper —</option>
+            {% for p in papers %}
+            <option value="{{ p }}">{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="shift">Shift <span class="required">*</span></label>
+          <select id="shift" name="shift" class="form-input" required disabled>
+            <option value="">— Select shift —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="date">Exam Date <span class="required">*</span></label>
+          <select id="date" name="date" class="form-input" required disabled>
+            <option value="">— Select date —</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary" id="submitBtn">
+        <span class="btn-text">Calculate My Score</span>
+        <span class="btn-spinner" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          Processing…
+        </span>
+      </button>
+
+    </form>
+  </div>
+
+
+  <!-- Available keys notice -->
+  <div class="available-keys">
+    <h3>Available Answer Keys</h3>
+    <div class="key-chips">
+      {% for k in keys %}
+      <span class="key-chip">{{ k.paper }} · Shift {{ k.shift }} · {{ k.date }}</span>
+      {% endfor %}
+    </div>
+    <p class="muted">Don't see your paper? Please contact the admin.</p>
+  </div>
+
+  {% else %}
+  <div class="card empty-state">
+    <div class="empty-icon">📋</div>
+    <h2>No Answer Keys Available</h2>
+    <p>No answer keys have been parsed yet. Please run <code>answer_parser.py</code> to parse a GATE answer key PDF before using this tool.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+const cascade = {{ cascade_json | safe }};
+
+const paperSel = document.getElementById("paper");
+const shiftSel = document.getElementById("shift");
+const dateSel  = document.getElementById("date");
+const form     = document.getElementById("calcForm");
+const submitBtn= document.getElementById("submitBtn");
+
+function populateSelect(sel, options, placeholder) {
+  sel.innerHTML = `<option value="">${placeholder}</option>`;
+  options.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v;
+    sel.appendChild(o);
+  });
+  sel.disabled = options.length === 0;
+}
+
+paperSel.addEventListener("change", () => {
+  const shifts = Object.keys(cascade[paperSel.value] || {}).sort();
+  populateSelect(shiftSel, shifts, "— Select shift —");
+  populateSelect(dateSel,  [],     "— Select date —");
+});
+
+shiftSel.addEventListener("change", () => {
+  const dates = (cascade[paperSel.value]?.[shiftSel.value] || []).sort();
+  populateSelect(dateSel, dates, "— Select date —");
+});
+
+form.addEventListener("submit", e => {
+  const url = document.getElementById("url").value.trim();
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    e.preventDefault();
+    alert("Please enter a valid http:// or https:// URL.");
+    return;
+  }
+  submitBtn.querySelector(".btn-text").hidden   = true;
+  submitBtn.querySelector(".btn-spinner").hidden = false;
+  submitBtn.disabled = true;
+});
+</script>
+{% endblock %}

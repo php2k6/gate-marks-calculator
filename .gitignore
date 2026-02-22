@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+# Uploads (temporary session files — never commit)
+uploads/csv/
+uploads/json/
+uploads/pdf/
+uploads/*.html
+
+# Query log (contains candidate PII — keep off repo)
+queries.csv
+
+# Nested duplicate answer_keys folder
+answer_keys/answer_keys/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+.env
