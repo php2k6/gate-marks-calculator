@@ -1,6 +1,6 @@
 # GATE Result Calculator
 
-A self-hosted Flask web application that lets GATE candidates instantly check their score by pasting their official GATE response-sheet URL. The app fetches the response sheet, matches it against a pre-parsed answer key, and generates a detailed PDF report — all without storing any personal data beyond the upload session (files are auto-deleted after 15 minutes).
+A Flask web app that lets GATE candidates instantly check their score by pasting their official GATE response-sheet URL. It fetches the response sheet, matches it against a pre-parsed answer key, and generates a detailed PDF report.
 
 ---
 
@@ -9,31 +9,24 @@ A self-hosted Flask web application that lets GATE candidates instantly check th
 1. [Features](#features)
 2. [Project Structure](#project-structure)
 3. [Prerequisites](#prerequisites)
-4. [Local Deployment](#local-deployment)
-5. [Production Deployment](#production-deployment)
-6. [Admin Guide — Parsing the Answer Key](#admin-guide--parsing-the-answer-key)
+4. [Setup & Run](#setup--run)
+5. [Admin Guide — Parsing the Answer Key](#admin-guide--parsing-the-answer-key)
    - [Step 1 — Get the Official Answer Key PDF](#step-1--get-the-official-answer-key-pdf)
    - [Step 2 — Find the Starting Serial Number](#step-2--find-the-starting-serial-number)
    - [Step 3 — Run answer_parser.py](#step-3--run-answer_parserpy)
    - [Answer Key File Naming Convention](#answer-key-file-naming-convention)
-7. [How Candidates Use the Website](#how-candidates-use-the-website)
-8. [Security Model](#security-model)
-9. [Scoring Logic](#scoring-logic)
-10. [Adding Support for New Papers / Shifts](#adding-support-for-new-papers--shifts)
-11. [Environment Variables](#environment-variables)
-12. [Troubleshooting](#troubleshooting)
+6. [How Candidates Use the Website](#how-candidates-use-the-website)
+7. [Scoring Logic](#scoring-logic)
+8. [Adding Support for New Papers / Shifts](#adding-support-for-new-papers--shifts)
 
 ---
 
 ## Features
 
-- **Instant GATE score** computed from the official GATE CDN response URL — no file upload needed by the candidate
-- **Cascading paper → shift → date** selector automatically built from the answer keys present on disk
-- **PDF report** with a per-question breakdown, section-wise stats, and MCQ / MSQ / NAT metrics; downloaded via a signed single-use link
-- **JSON + CSV** intermediate results saved in `uploads/` for audit
-- **Admin query log** written to `queries.csv`
-- **Auto-cleanup** — all temporary files older than 15 min are purged on every request
-- **Security** — 10-min signed PDF tokens, no direct static serving of sensitive directories, binds to `127.0.0.1` by default
+- Paste your official GATE response-sheet URL — no file upload needed
+- Cascading paper → shift → date selector built automatically from available answer keys
+- Detailed PDF report with per-question breakdown, section-wise and type-wise (MCQ/MSQ/NAT) stats
+- Admin query log written to `queries.csv`
 
 ---
 
@@ -89,22 +82,20 @@ pip install -r requirements.txt
 
 ---
 
-## Local Deployment
+## Setup & Run
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/php2k6/gate-marks-calculator.git
 cd gate-marks-calculator
 
-# 2. (Recommended) Create a virtual environment
+# 2. Create a virtual environment (recommended)
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate  # Linux/macOS
 
 # 3. Install dependencies
-pip install flask itsdangerous beautifulsoup4 pdfplumber reportlab
+pip install -r requirements.txt
 
 # 4. Parse at least one answer key (see Admin Guide below)
 
@@ -113,92 +104,6 @@ python app.py
 ```
 
 Open **http://127.0.0.1:5000** in your browser.
-
-> **Note:** By default `app.py` binds to `127.0.0.1` only. To expose it on your local network during testing replace the last line with `app.run(host="0.0.0.0", port=5000, debug=False)`.
-
----
-
-## Production Deployment
-
-### Option A — Gunicorn + Nginx (Linux / VPS)
-
-```bash
-pip install gunicorn
-
-# Run Gunicorn bound to a local socket
-gunicorn -w 4 -b 127.0.0.1:8000 app:app
-```
-
-Minimal Nginx config (`/etc/nginx/sites-available/gate-calc`):
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        client_max_body_size 5M;
-    }
-}
-```
-
-Enable & restart:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/gate-calc /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl restart nginx
-```
-
-Add HTTPS with Certbot:
-
-```bash
-sudo certbot --nginx -d your-domain.com
-```
-
-### Option B — Systemd Service (keep it running)
-
-Create `/etc/systemd/system/gate-calc.service`:
-
-```ini
-[Unit]
-Description=GATE Result Calculator
-After=network.target
-
-[Service]
-User=www-data
-WorkingDirectory=/var/www/gate-marks-calculator
-Environment="GATE_SECRET=replace-with-a-strong-random-secret"
-ExecStart=/var/www/gate-marks-calculator/.venv/bin/gunicorn -w 4 -b 127.0.0.1:8000 app:app
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now gate-calc
-```
-
-### Option C — Docker (quick deploy anywhere)
-
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir flask itsdangerous beautifulsoup4 pdfplumber reportlab gunicorn
-EXPOSE 8000
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
-```
-
-```bash
-docker build -t gate-calc .
-docker run -d -p 80:8000 -e GATE_SECRET="your-secret" gate-calc
-```
 
 ---
 
@@ -312,21 +217,6 @@ serial_no,q_no,q_type,section,answer,marks_correct,marks_incorrect
 
 ---
 
-## Security Model
-
-| Feature | Detail |
-|---|---|
-| Local-only binding | Default `127.0.0.1:5000` — not reachable from outside |
-| PDF download tokens | HMAC-SHA256 signed (itsdangerous), 10-min TTL, single-use burn |
-| Token replay prevention | In-memory used-token set rejects replayed links within process lifetime |
-| Stale file sweep | All `uploads/` files older than 15 min are deleted on every request |
-| Blocked static dirs | `/uploads/`, `/answer_keys/`, `/results/`, `/responses/` return 403 |
-| No persistent PII | Response HTML deleted immediately after parsing; PDF deleted after download |
-| UUID file names | All temp files use random UUID names — no predictable paths |
-| Secret key | Set via `GATE_SECRET` env var — change the default before going to production |
-
----
-
 ## Scoring Logic
 
 | Question Type | Correct | Incorrect | Not Attempted |
@@ -354,52 +244,6 @@ MSQ answers are matched as sets (order-independent). NAT answers are checked aga
 2. Find the starting serial number (Q1's `Question ID`) from any candidate's response sheet for that session (see [Step 2](#step-2--find-the-starting-serial-number)).
 3. Run `answer_parser.py` with the correct PDF, starting serial, paper type, shift, and date.
 4. The new key files appear in `answer_keys/` and the dropdowns update automatically on next page load — no server restart required.
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `GATE_SECRET` | `gate-result-local-secret-2026-change-me` | HMAC secret for signing PDF download tokens. **Must be changed in production.** |
-
-Set it before starting the server:
-
-```bash
-# Linux / macOS
-export GATE_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-python app.py
-
-# Windows PowerShell
-$env:GATE_SECRET = (python -c "import secrets; print(secrets.token_hex(32))")
-python app.py
-```
-
----
-
-## Troubleshooting
-
-### "No question responses found in the page"
-- Make sure the URL is your **personal response sheet**, not the official answer-key PDF.
-- The URL should look like `https://cdn.digialm.com/…/YourCandidateID_GATE….html`.
-- Try opening the URL in a browser first to confirm it loads.
-
-### "Answer key for X has not been parsed yet"
-- Run `answer_parser.py` for the correct paper/shift/date combination (see Admin Guide).
-- File names are case-sensitive. Verify the file exists in `answer_keys/`.
-
-### "None of the questions matched the answer key"
-- The **starting serial number** used during `answer_parser.py` was wrong.
-- Open any response sheet for that session, read Q1's `Question ID`, and re-run `answer_parser.py` with the correct value.
-- Also check that you selected the correct paper, shift, and date in the dropdown.
-
-### PDF download link expired / already used
-- The signed link is valid for **10 minutes** and can only be used **once**.
-- Re-submit the form to generate a fresh result and a new download link.
-
-### `pdfplumber` cannot read the answer key PDF
-- Some GATE PDFs use scanned images. In that case, OCR the PDF first (e.g. with `ocrmypdf`) before passing it to `answer_parser.py`.
-- Ensure the PDF rows follow the pattern: `<Q_No> <MCQ|MSQ|NAT> <Section> <Answer>`.
 
 ---
 
