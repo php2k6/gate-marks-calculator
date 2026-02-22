@@ -88,6 +88,11 @@ code { font-family: monospace; background: var(--lgray); padding: 1px 5px; borde
   vertical-align: middle;
   opacity: .8;
 }
+.footer-report-link {
+  color: rgba(255,255,255,.5);
+  font-weight: 400;
+}
+.footer-report-link:hover { color: #ffa07a; }
 
 /* ─── layout ────────────────────────────────────────────────────────────── */
 .main-content { flex: 1; padding: 2rem 1rem 3rem; }
