@@ -64,8 +64,29 @@ code { font-family: monospace; background: var(--lgray); padding: 1px 5px; borde
   background: var(--blue-dk);
   color: rgba(255,255,255,.55);
   text-align: center;
-  padding: .9rem 1rem;
+  padding: .9rem 1rem 1rem;
   font-size: .8rem;
+}
+.footer-credit {
+  margin-top: .35rem;
+  font-size: .78rem;
+  color: rgba(255,255,255,.4);
+}
+.footer-gh-link {
+  color: rgba(255,255,255,.75);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-weight: 600;
+  transition: color .2s;
+}
+.footer-gh-link:hover { color: #fff; }
+.gh-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  opacity: .8;
 }
 
 /* ─── layout ────────────────────────────────────────────────────────────── */
