@@ -138,247 +138,395 @@ def generate_pdf_report(pdf_path, candidate: dict, summary: dict,
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm, mm
+        from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
         from reportlab.platypus import (
             SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
             HRFlowable, KeepTogether
         )
+        from reportlab.pdfgen import canvas as rl_canvas
     except ImportError:
         print("  [PDF skipped] reportlab not installed. pip install reportlab")
         return
 
-    # ── colours ────────────────────────────────────────────────────────────
-    BLUE    = colors.HexColor("#1a3a6b")
-    ORANGE  = colors.HexColor("#e87722")
-    LGRAY   = colors.HexColor("#f4f6fa")
-    MGRAY   = colors.HexColor("#d0d7e6")
-    GREEN   = colors.HexColor("#1e7e34")
-    RED     = colors.HexColor("#c0392b")
-    AMBER   = colors.HexColor("#d68000")
-    WHITE   = colors.white
-    BLACK   = colors.black
+    # ── palette ─────────────────────────────────────────────────────────────
+    BLUE     = colors.HexColor("#1a3a6b")
+    BLUE_MID = colors.HexColor("#2d5aa0")
+    ORANGE   = colors.HexColor("#e87722")
+    LGRAY    = colors.HexColor("#f4f6fa")
+    MGRAY    = colors.HexColor("#d0d7e6")
+    DGRAY    = colors.HexColor("#6b7280")
+    GREEN    = colors.HexColor("#1e7e34")
+    GREEN_LT = colors.HexColor("#d4edda")
+    RED      = colors.HexColor("#c0392b")
+    RED_LT   = colors.HexColor("#fde8e8")
+    AMBER    = colors.HexColor("#b45309")
+    AMBER_LT = colors.HexColor("#fef9c3")
+    WHITE    = colors.white
+    BLACK    = colors.black
 
-    # ── styles ─────────────────────────────────────────────────────────────
-    styles  = getSampleStyleSheet()
-    H1      = ParagraphStyle("h1", fontSize=20, textColor=WHITE,
-                             fontName="Helvetica-Bold", alignment=TA_CENTER,
-                             spaceAfter=2)
-    H2      = ParagraphStyle("h2", fontSize=11, textColor=WHITE,
-                             fontName="Helvetica", alignment=TA_CENTER)
-    LABEL   = ParagraphStyle("label", fontSize=9, textColor=BLUE,
-                             fontName="Helvetica-Bold")
-    BODY    = ParagraphStyle("body", fontSize=9, fontName="Helvetica")
-    SECT    = ParagraphStyle("sect", fontSize=11, textColor=BLUE,
-                             fontName="Helvetica-Bold", spaceBefore=12,
-                             spaceAfter=4)
-    FOOTER  = ParagraphStyle("footer", fontSize=7, textColor=colors.grey,
-                             fontName="Helvetica", alignment=TA_CENTER)
+    PAGE_W, PAGE_H = A4
+    L_MAR = R_MAR = 1.8 * cm
+    T_MAR = 2.2 * cm   # leave room for per-page top bar
+    B_MAR = 2.0 * cm   # leave room for per-page footer bar
+    W = PAGE_W - L_MAR - R_MAR
+    generated_str = datetime.now().strftime("%d %b %Y, %H:%M")
 
+    # ── per-page decorator canvas ────────────────────────────────────────────
+    class _PageCanvas(rl_canvas.Canvas):
+        """Draws orange top bar + branded footer bar on every page."""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved = []
+
+        def showPage(self):
+            self._saved.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved)
+            for i, state in enumerate(self._saved, 1):
+                self.__dict__.update(state)
+                self._decorate(i, total)
+                rl_canvas.Canvas.showPage(self)
+            rl_canvas.Canvas.save(self)
+
+        def _decorate(self, page_num, total_pages):
+            # ── orange accent bar at top ────────────────────────────────
+            self.setFillColor(ORANGE)
+            self.rect(L_MAR, PAGE_H - T_MAR + 6*mm,
+                      W, 3.5, fill=1, stroke=0)
+
+            # ── "GATE Result Calculator" text in top-right ──────────────
+            self.setFont("Helvetica-Bold", 8)
+            self.setFillColor(BLUE)
+            self.drawRightString(L_MAR + W,
+                                 PAGE_H - T_MAR + 7.5*mm,
+                                 "GATE Result Calculator")
+
+            # ── footer bar ──────────────────────────────────────────────
+            fy = B_MAR - 1.4 * cm
+            self.setFillColor(BLUE)
+            self.rect(L_MAR, fy, W, 18, fill=1, stroke=0)
+            self.setFillColor(WHITE)
+            self.setFont("Helvetica", 7)
+            self.drawString(L_MAR + 5, fy + 5.5,
+                            f"Generated: {generated_str}   \u2022   Results are indicative only.")
+            self.setFont("Helvetica-Bold", 7)
+            self.drawRightString(L_MAR + W - 5, fy + 5.5,
+                                 f"github.com/php2k6   \u2022   Page {page_num} of {total_pages}")
+
+    # ── document ─────────────────────────────────────────────────────────────
     doc = SimpleDocTemplate(
         str(pdf_path),
         pagesize=A4,
-        leftMargin=1.8*cm, rightMargin=1.8*cm,
-        topMargin=1.5*cm, bottomMargin=1.5*cm,
+        leftMargin=L_MAR, rightMargin=R_MAR,
+        topMargin=T_MAR, bottomMargin=B_MAR,
     )
-    W = A4[0] - 3.6*cm   # usable width
     story = []
 
-    # ── banner header ──────────────────────────────────────────────────────
-    banner_data = [[
-        Paragraph("GATE Result Report", H1),
-    ]]
-    banner = Table(banner_data, colWidths=[W])
-    banner.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0), (-1,-1), BLUE),
-        ("TOPPADDING",   (0,0), (-1,-1), 10),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
-        ("LINEBELOW",    (0,-1),(-1,-1), 4, ORANGE),
-    ]))
-    sub_data = [[
-        Paragraph(f"Paper: {candidate['paper']}  |  "
-                  f"Shift: {candidate['shift']}  |  "
-                  f"Date: {candidate['date']}", H2)
-    ]]
-    sub = Table(sub_data, colWidths=[W])
-    sub.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0), (-1,-1), BLUE),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 10),
-    ]))
-    story += [banner, sub, Spacer(1, 0.35*cm)]
+    # ── text styles ──────────────────────────────────────────────────────────
+    def _sty(name, **kw):
+        return ParagraphStyle(name, **kw)
 
-    # ── candidate info ─────────────────────────────────────────────────────
-    story.append(Paragraph("Candidate Information", SECT))
-    ci = [
-        [Paragraph("Candidate ID",   LABEL), Paragraph(candidate['id'],   BODY),
-         Paragraph("Candidate Name", LABEL), Paragraph(candidate['name'], BODY)],
-    ]
-    ci_tbl = Table(ci, colWidths=[W*0.18, W*0.32, W*0.18, W*0.32])
-    ci_tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0), (-1,-1), LGRAY),
-        ("BOX",          (0,0), (-1,-1), 0.5, MGRAY),
-        ("INNERGRID",    (0,0), (-1,-1), 0.3, MGRAY),
-        ("TOPPADDING",   (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 6),
-        ("LEFTPADDING",  (0,0), (-1,-1), 8),
-    ]))
-    story += [ci_tbl, Spacer(1, 0.4*cm)]
+    TITLE   = _sty("title",  fontSize=22, fontName="Helvetica-Bold",
+                   textColor=WHITE, alignment=TA_LEFT, spaceAfter=2,
+                   leading=26)
+    SUBTITLE= _sty("subt",   fontSize=10, fontName="Helvetica",
+                   textColor=colors.HexColor("#c8d8f0"), alignment=TA_LEFT)
+    CREDIT  = _sty("credit", fontSize=8,  fontName="Helvetica",
+                   textColor=ORANGE, alignment=TA_RIGHT)
+    LABEL   = _sty("lbl",    fontSize=8,  fontName="Helvetica-Bold",
+                   textColor=DGRAY)
+    BODY    = _sty("body",   fontSize=9,  fontName="Helvetica",
+                   textColor=BLACK)
+    SECT    = _sty("sect",   fontSize=11, fontName="Helvetica-Bold",
+                   textColor=BLUE, spaceBefore=14, spaceAfter=5,
+                   borderPad=2)
+    HDR     = _sty("thdr",   fontSize=9,  fontName="Helvetica-Bold",
+                   textColor=WHITE, alignment=TA_CENTER)
+    CELL    = _sty("tcell",  fontSize=9,  fontName="Helvetica",
+                   alignment=TA_CENTER)
+    CELL_L  = _sty("tcelll", fontSize=9,  fontName="Helvetica",
+                   alignment=TA_LEFT)
+    BOLD_C  = _sty("boldc",  fontSize=9,  fontName="Helvetica-Bold",
+                   alignment=TA_CENTER)
 
-    # ── score scorecard ────────────────────────────────────────────────────
-    story.append(Paragraph("Score Summary", SECT))
-    pct = round(summary['total'] / summary['max_marks'] * 100, 1) \
-          if summary['max_marks'] else 0
-
-    SC = ParagraphStyle("sc_num", fontSize=22, fontName="Helvetica-Bold",
-                        alignment=TA_CENTER, textColor=BLUE)
-    SC_LBL = ParagraphStyle("sc_lbl", fontSize=8, fontName="Helvetica",
-                            alignment=TA_CENTER, textColor=colors.grey)
-    def card_col(val, lbl, col):
-        d = [[Paragraph(str(val), SC)], [Paragraph(lbl, SC_LBL)]]
-        t = Table(d, colWidths=[W*0.24])
+    # ── helper: section heading with left accent bar ─────────────────────────
+    def section_heading(text):
+        data = [[Paragraph(text, SECT)]]
+        t = Table(data, colWidths=[W])
         t.setStyle(TableStyle([
-            ("BACKGROUND",   (0,0), (-1,-1), LGRAY),
-            ("BOX",          (0,0), (-1,-1), 1.5, col),
-            ("TOPPADDING",   (0,0), (-1,-1), 8),
-            ("BOTTOMPADDING",(0,0), (-1,-1), 8),
+            ("LINEBEFOFE",  (0,0),(0,0), 4, ORANGE),   # accent stripe
+            ("BACKGROUND",  (0,0),(-1,-1), LGRAY),
+            ("LEFTPADDING", (0,0),(-1,-1), 6),
+            ("TOPPADDING",  (0,0),(-1,-1), 4),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 4),
+            ("LINEABOVE",   (0,0),(-1,0),  1.5, ORANGE),
         ]))
         return t
 
-    scorecard_row = [[
-        card_col(f"{summary['total']} / {summary['max_marks']}", "Total Score", BLUE),
-        card_col(f"{pct}%",       "Percentage",     ORANGE),
-        card_col(summary['correct'],   "Correct",   GREEN),
-        card_col(summary['incorrect'],  "Incorrect", RED),
-    ]]
-    scorecard = Table(scorecard_row, colWidths=[W*0.25]*4,
-                      hAlign="LEFT", spaceAfter=4)
-    scorecard.setStyle(TableStyle([("LEFTPADDING",(0,0),(-1,-1),0),
-                                   ("RIGHTPADDING",(0,0),(-1,-1),6)]))
-    story += [scorecard, Spacer(1, 0.4*cm)]
+    # ── banner header ────────────────────────────────────────────────────────
+    banner_left = [
+        [Paragraph("GATE Result Report", TITLE)],
+        [Paragraph(
+            f"Paper: <b>{candidate['paper']}</b> &nbsp;|\u200a "
+            f"Shift: <b>{candidate['shift']}</b> &nbsp;|\u200a "
+            f"Date: <b>{candidate['date']}</b>", SUBTITLE)],
+    ]
+    banner_right = [
+        [Paragraph("github.com/php2k6", CREDIT)],
+        [Paragraph("GATE Result Calculator", CREDIT)],
+    ]
+    ban_l = Table(banner_left,  colWidths=[W * 0.65])
+    ban_r = Table(banner_right, colWidths=[W * 0.35])
+    ban_l.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), BLUE),
+        ("LEFTPADDING",   (0,0),(-1,-1), 10),
+        ("TOPPADDING",    (0,0),(-1,-1), 8),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+    ]))
+    ban_r.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), BLUE),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 10),
+        ("TOPPADDING",    (0,0),(-1,-1), 12),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+    ]))
+    banner = Table([[ban_l, ban_r]], colWidths=[W * 0.65, W * 0.35])
+    banner.setStyle(TableStyle([
+        ("BACKGROUND",   (0,0),(-1,-1), BLUE),
+        ("LEFTPADDING",  (0,0),(-1,-1), 0),
+        ("RIGHTPADDING", (0,0),(-1,-1), 0),
+        ("TOPPADDING",   (0,0),(-1,-1), 0),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 0),
+        ("LINEBELOW",    (0,-1),(-1,-1), 4, ORANGE),
+    ]))
+    story += [banner, Spacer(1, 0.45 * cm)]
 
-    # ── per-type breakdown ─────────────────────────────────────────────────
-    story.append(Paragraph("Question Type Breakdown", SECT))
-    HDR = ParagraphStyle("thdr", fontSize=9, fontName="Helvetica-Bold",
-                         textColor=WHITE, alignment=TA_CENTER)
-    CELL= ParagraphStyle("tcell", fontSize=9, fontName="Helvetica",
-                         alignment=TA_CENTER)
-    type_hdr = [[Paragraph(h, HDR) for h in
-                 ["Type","Total Qs","Correct","Incorrect","Not Attempted","Marks"]]]
+    # ── candidate info ───────────────────────────────────────────────────────
+    story.append(section_heading("Candidate Information"))
+    story.append(Spacer(1, 0.15 * cm))
+    ci = [[
+        Paragraph("Candidate ID",   LABEL),
+        Paragraph(str(candidate['id']),   BODY),
+        Paragraph("Name",           LABEL),
+        Paragraph(str(candidate['name']), BODY),
+        Paragraph("Paper / Shift",  LABEL),
+        Paragraph(f"{candidate['paper']} · Shift {candidate['shift']}", BODY),
+    ]]
+    ci_tbl = Table(ci, colWidths=[W*0.13, W*0.24, W*0.09, W*0.28, W*0.12, W*0.14])
+    ci_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), LGRAY),
+        ("BOX",           (0,0),(-1,-1), 0.8, MGRAY),
+        ("INNERGRID",     (0,0),(-1,-1), 0.3, MGRAY),
+        ("TOPPADDING",    (0,0),(-1,-1), 7),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+        ("LEFTPADDING",   (0,0),(-1,-1), 8),
+    ]))
+    story += [ci_tbl, Spacer(1, 0.5 * cm)]
+
+    # ── marks summary cards ──────────────────────────────────────────────────
+    story.append(section_heading("Marks Summary"))
+    story.append(Spacer(1, 0.15 * cm))
+
+    pct = round(summary['total'] / summary['max_marks'] * 100, 1) \
+          if summary['max_marks'] else 0
+
+    def _card(top_val, top_lbl, bot_val, bot_lbl, accent, bg):
+        TOP_V = _sty(f"cv_{top_lbl}", fontSize=20, fontName="Helvetica-Bold",
+                     alignment=TA_CENTER, textColor=accent, leading=24)
+        TOP_L = _sty(f"cl_{top_lbl}", fontSize=7.5, fontName="Helvetica",
+                     alignment=TA_CENTER, textColor=DGRAY)
+        BOT_V = _sty(f"bv_{bot_lbl}", fontSize=13, fontName="Helvetica-Bold",
+                     alignment=TA_CENTER, textColor=accent, leading=16)
+        BOT_L = _sty(f"bl_{bot_lbl}", fontSize=7, fontName="Helvetica",
+                     alignment=TA_CENTER, textColor=DGRAY)
+        d = [
+            [Paragraph(str(top_val), TOP_V)],
+            [Paragraph(top_lbl, TOP_L)],
+            [HRFlowable(width="80%", thickness=0.5, color=MGRAY, hAlign="CENTER")],
+            [Paragraph(str(bot_val), BOT_V)],
+            [Paragraph(bot_lbl, BOT_L)],
+        ]
+        t = Table(d, colWidths=[W * 0.195])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), bg),
+            ("LINEABOVE",     (0,0),(-1, 0), 3, accent),
+            ("BOX",           (0,0),(-1,-1), 0.5, MGRAY),
+            ("TOPPADDING",    (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+        ]))
+        return t
+
+    not_att = summary.get("not_attempted", 0)
+    cards_row = [[
+        _card(f"{summary['total']}",   "Total Marks",
+              f"/ {summary['max_marks']}", "Max Marks",   BLUE,   LGRAY),
+        _card(f"{pct}%",               "Percentage",
+              f"{summary['total_qs']}", "Questions",      BLUE_MID, LGRAY),
+        _card(summary['correct'],      "Correct",
+              f"+{round(sum(r['marks_awarded'] for r in results if r['status']=='correct'),1)}",
+              "Marks Earned",                             GREEN,  GREEN_LT),
+        _card(summary['incorrect'],    "Incorrect",
+              f"{round(sum(r['marks_awarded'] for r in results if r['status']=='incorrect'),1)}",
+              "Marks Lost",                               RED,    RED_LT),
+        _card(not_att,                 "Not Attempted",
+              "0", "Marks Lost",                          AMBER,  AMBER_LT),
+    ]]
+    cards = Table(cards_row, colWidths=[W * 0.2] * 5)
+    cards.setStyle(TableStyle([
+        ("LEFTPADDING",  (0,0),(-1,-1), 3),
+        ("RIGHTPADDING", (0,0),(-1,-1), 3),
+        ("TOPPADDING",   (0,0),(-1,-1), 0),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 0),
+    ]))
+    story += [cards, Spacer(1, 0.55 * cm)]
+
+    # ── per-type breakdown ───────────────────────────────────────────────────
+    story.append(section_heading("Question Type Breakdown"))
+    story.append(Spacer(1, 0.15 * cm))
+
+    type_hdr_row = [[Paragraph(h, HDR) for h in
+                     ["Type", "Total Qs", "Correct", "Incorrect",
+                      "Not Attempted", "Marks"]]]
     type_rows = []
     for qt, st in type_stats.items():
-        type_rows.append([Paragraph(qt, CELL),
-                          Paragraph(str(st["total"]),        CELL),
-                          Paragraph(str(st["correct"]),      CELL),
-                          Paragraph(str(st["incorrect"]),    CELL),
-                          Paragraph(str(st["not_attempted"]),CELL),
-                          Paragraph(str(st["marks"]),        CELL)])
-    total_row = [Paragraph(h, ParagraphStyle("tot", fontSize=9,
-                fontName="Helvetica-Bold", alignment=TA_CENTER)) for h in [
+        type_rows.append([
+            Paragraph(qt, BOLD_C),
+            Paragraph(str(st["total"]),         CELL),
+            Paragraph(str(st["correct"]),        CELL),
+            Paragraph(str(st["incorrect"]),      CELL),
+            Paragraph(str(st["not_attempted"]),  CELL),
+            Paragraph(str(st["marks"]),          CELL),
+        ])
+    BOLD_TOT = _sty("btot", fontSize=9, fontName="Helvetica-Bold",
+                    alignment=TA_CENTER, textColor=BLUE)
+    total_row = [Paragraph(v, BOLD_TOT) for v in [
         "TOTAL",
         str(summary["total_qs"]),
         str(summary["correct"]),
         str(summary["incorrect"]),
-        str(summary["not_attempted"]),
+        str(not_att),
         str(summary["total"]),
     ]]
-    type_data = type_hdr + type_rows + [total_row]
-    cw = [W*0.12, W*0.14, W*0.14, W*0.16, W*0.22, W*0.22]
-    t2 = Table(type_data, colWidths=cw)
-    t2_style = [
-        ("BACKGROUND",   (0,0), (-1,0),  BLUE),
-        ("BACKGROUND",   (0,-1),(-1,-1), MGRAY),
-        ("INNERGRID",    (0,0), (-1,-1), 0.3, MGRAY),
-        ("BOX",          (0,0), (-1,-1), 0.5, MGRAY),
-        ("TOPPADDING",   (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+    type_data = type_hdr_row + type_rows + [total_row]
+    cw6 = [W*0.12, W*0.14, W*0.14, W*0.15, W*0.22, W*0.23]
+    t2  = Table(type_data, colWidths=cw6)
+    t2s = [
+        ("BACKGROUND",    (0,0), (-1, 0),  BLUE),
+        ("BACKGROUND",    (0,-1),(-1,-1),  MGRAY),
+        ("LINEABOVE",     (0,-1),(-1,-1),  1, BLUE),
+        ("INNERGRID",     (0,0), (-1,-1),  0.3, MGRAY),
+        ("BOX",           (0,0), (-1,-1),  0.6, MGRAY),
+        ("TOPPADDING",    (0,0), (-1,-1),  6),
+        ("BOTTOMPADDING", (0,0), (-1,-1),  6),
     ]
-    for i in range(1, len(type_data)-1):
+    for i in range(1, len(type_data) - 1):
         if i % 2 == 0:
-            t2_style.append(("BACKGROUND", (0,i), (-1,i), LGRAY))
-    t2.setStyle(TableStyle(t2_style))
-    story += [t2, Spacer(1, 0.4*cm)]
+            t2s.append(("BACKGROUND", (0,i), (-1,i), LGRAY))
+    t2.setStyle(TableStyle(t2s))
+    story += [t2, Spacer(1, 0.5 * cm)]
 
-    # ── section breakdown ──────────────────────────────────────────────────
+    # ── section breakdown ────────────────────────────────────────────────────
     sections = sorted({r["section"] for r in results if r.get("section")})
     if sections:
-        story.append(Paragraph("Section Breakdown", SECT))
-        sec_hdr = [[Paragraph(h, HDR) for h in
-                    ["Section","Total Qs","Correct","Incorrect","Not Attempted","Marks"]]]
+        story.append(section_heading("Section Breakdown"))
+        story.append(Spacer(1, 0.15 * cm))
+        sec_hdr_row = [[Paragraph(h, HDR) for h in
+                        ["Section", "Total Qs", "Correct", "Incorrect",
+                         "Not Attempted", "Marks"]]]
         sec_rows = []
         for sec in sections:
-            sr = [r for r in results if r.get("section")==sec]
-            sc_ = sum(1 for r in sr if r["status"]=="correct")
-            si_ = sum(1 for r in sr if r["status"]=="incorrect")
-            sna = sum(1 for r in sr if r["status"]=="not_attempted")
-            sm  = round(sum(r["marks_awarded"] for r in sr), 2)
-            sec_rows.append([Paragraph(sec, CELL),
-                             Paragraph(str(len(sr)), CELL),
-                             Paragraph(str(sc_), CELL),
-                             Paragraph(str(si_), CELL),
-                             Paragraph(str(sna), CELL),
-                             Paragraph(str(sm),  CELL)])
-        sec_data = sec_hdr + sec_rows
-        t3 = Table(sec_data, colWidths=cw)
-        t3_style = [
-            ("BACKGROUND",   (0,0), (-1,0), BLUE),
-            ("INNERGRID",    (0,0), (-1,-1), 0.3, MGRAY),
-            ("BOX",          (0,0), (-1,-1), 0.5, MGRAY),
-            ("TOPPADDING",   (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+            sr   = [r for r in results if r.get("section") == sec]
+            sc_  = sum(1 for r in sr if r["status"] == "correct")
+            si_  = sum(1 for r in sr if r["status"] == "incorrect")
+            sna_ = sum(1 for r in sr if r["status"] == "not_attempted")
+            sm_  = round(sum(r["marks_awarded"] for r in sr), 2)
+            sec_rows.append([
+                Paragraph(sec,        BOLD_C),
+                Paragraph(str(len(sr)), CELL),
+                Paragraph(str(sc_),   CELL),
+                Paragraph(str(si_),   CELL),
+                Paragraph(str(sna_),  CELL),
+                Paragraph(str(sm_),   CELL),
+            ])
+        sec_data = sec_hdr_row + sec_rows
+        t3 = Table(sec_data, colWidths=cw6)
+        t3s = [
+            ("BACKGROUND",    (0,0),(-1, 0), BLUE),
+            ("INNERGRID",     (0,0),(-1,-1), 0.3, MGRAY),
+            ("BOX",           (0,0),(-1,-1), 0.6, MGRAY),
+            ("TOPPADDING",    (0,0),(-1,-1), 6),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 6),
         ]
         for i in range(1, len(sec_data)):
             if i % 2 == 0:
-                t3_style.append(("BACKGROUND", (0,i), (-1,i), LGRAY))
-        t3.setStyle(TableStyle(t3_style))
-        story += [t3, Spacer(1, 0.4*cm)]
+                t3s.append(("BACKGROUND", (0,i), (-1,i), LGRAY))
+        t3.setStyle(TableStyle(t3s))
+        story += [t3, Spacer(1, 0.5 * cm)]
 
-    # ── detailed question table ────────────────────────────────────────────
-    story.append(Paragraph("Detailed Question Results", SECT))
-    det_hdr = [[Paragraph(h, HDR) for h in
-                ["Q No","Type","Section","Correct Answer","Given Answer",
-                 "Status","Marks"]]]
-    STATUS_COL  = {"correct": GREEN, "incorrect": RED, "not_attempted": AMBER}
+    # ── detailed question table ──────────────────────────────────────────────
+    story.append(section_heading("Detailed Question Results"))
+    story.append(Spacer(1, 0.15 * cm))
+
+    det_hdr_row = [[Paragraph(h, HDR) for h in
+                    ["Q No", "Type", "Section",
+                     "Correct Ans", "Given Ans", "Status", "Marks"]]]
+    STATUS_BG = {
+        "correct":      (GREEN,  GREEN_LT),
+        "incorrect":    (RED,    RED_LT),
+        "not_attempted":(AMBER,  AMBER_LT),
+    }
+    MARK_STYLE = {
+        "correct":       _sty("mk_c", fontSize=8, fontName="Helvetica-Bold",
+                               alignment=TA_CENTER, textColor=GREEN),
+        "incorrect":     _sty("mk_i", fontSize=8, fontName="Helvetica-Bold",
+                               alignment=TA_CENTER, textColor=RED),
+        "not_attempted": _sty("mk_n", fontSize=8, fontName="Helvetica-Bold",
+                               alignment=TA_CENTER, textColor=AMBER),
+    }
+    STATUS_LABEL = {"correct": "Correct", "incorrect": "Incorrect",
+                    "not_attempted": "Not Att."}
+
     det_rows = []
-    for r in results:
-        st_col = STATUS_COL.get(r["status"], BLACK)
-        ST_CELL = ParagraphStyle("stc", fontSize=8, fontName="Helvetica-Bold",
-                                 alignment=TA_CENTER, textColor=st_col)
-        label = {"correct": "✔", "incorrect": "✘",
-                 "not_attempted": "—"}.get(r["status"], r["status"])
+    row_bg_overrides = []   # (row_index, bg_color)
+    for idx, r in enumerate(results, start=1):
+        st    = r["status"]
+        _, bg = STATUS_BG.get(st, (BLACK, WHITE))
+        mk_st = MARK_STYLE.get(st, CELL)
+        ST_ST = _sty(f"sts_{idx}", fontSize=8, fontName="Helvetica-Bold",
+                     alignment=TA_CENTER,
+                     textColor=STATUS_BG.get(st, (BLACK,WHITE))[0])
         det_rows.append([
-            Paragraph(r["q_no"],             CELL),
-            Paragraph(r["q_type"],           CELL),
-            Paragraph(r.get("section",""),   CELL),
-            Paragraph(r["correct_answer"],   CELL),
-            Paragraph(r["given_answer"] or "—", CELL),
-            Paragraph(label, ST_CELL),
-            Paragraph(str(r["marks_awarded"]), CELL),
+            Paragraph(str(r["q_no"]),              CELL),
+            Paragraph(r["q_type"],                 CELL),
+            Paragraph(r.get("section", ""),        CELL),
+            Paragraph(r["correct_answer"],         CELL),
+            Paragraph(r["given_answer"] or "—",    CELL),
+            Paragraph(STATUS_LABEL.get(st, st),    ST_ST),
+            Paragraph(str(r["marks_awarded"]),     mk_st),
         ])
-    det_data = det_hdr + det_rows
-    det_cw   = [W*0.09, W*0.08, W*0.16, W*0.18, W*0.18, W*0.16, W*0.15]
+        row_bg_overrides.append((idx, bg))
+
+    det_data = det_hdr_row + det_rows
+    det_cw   = [W*0.09, W*0.08, W*0.13, W*0.18, W*0.18, W*0.17, W*0.17]
     t4 = Table(det_data, colWidths=det_cw, repeatRows=1)
-    t4_style = [
-        ("BACKGROUND",   (0,0), (-1,0), BLUE),
-        ("INNERGRID",    (0,0), (-1,-1), 0.2, MGRAY),
-        ("BOX",          (0,0), (-1,-1), 0.5, MGRAY),
-        ("TOPPADDING",   (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
-        ("FONTSIZE",     (0,1), (-1,-1), 8),
+    t4s = [
+        ("BACKGROUND",    (0,0), (-1, 0), BLUE),
+        ("INNERGRID",     (0,0), (-1,-1), 0.2, MGRAY),
+        ("BOX",           (0,0), (-1,-1), 0.6, MGRAY),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("FONTSIZE",      (0,1), (-1,-1), 8),
     ]
-    for i in range(1, len(det_data)):
-        if i % 2 == 0:
-            t4_style.append(("BACKGROUND", (0,i), (-1,i), LGRAY))
-    t4.setStyle(TableStyle(t4_style))
-    story += [t4, Spacer(1, 0.5*cm)]
+    for row_idx, bg in row_bg_overrides:
+        if row_idx % 2 == 0:
+            t4s.append(("BACKGROUND", (0, row_idx), (-1, row_idx), LGRAY))
+    t4.setStyle(TableStyle(t4s))
+    story += [t4, Spacer(1, 0.4 * cm)]
 
-    # ── footer ─────────────────────────────────────────────────────────────
-    generated = datetime.now().strftime("%d %b %Y %H:%M")
-    story.append(HRFlowable(width="100%", thickness=0.5, color=MGRAY))
-    story.append(Paragraph(
-        f"Generated by GATE Result Calculator  •  {generated}", FOOTER))
-
-    doc.build(story)
+    doc.build(story, canvasmaker=_PageCanvas)
     print(f"  Report saved -> {pdf_path}")
 
 
